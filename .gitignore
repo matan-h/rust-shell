@@ -1,5 +1,6 @@
 target/
 other/
+.vscode/
 
 t.rs
 history.txt

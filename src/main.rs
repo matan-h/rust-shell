@@ -291,10 +291,10 @@ fn main() {
     let reset_color = "\x1b[0m";
     let red_color = "\x1b[0;31m";
     let ps1_resolve = ps1
-        .replace("${green}", green_color) // TODO use the shellexpend features
+        .replace("${green}", green_color) // TODO use the shellexpand features
         .replace("$reset_color", reset_color);
     // .replace("{pwd}", pwd.replace(&homedir, "~").as_str());
-    // let get_ps1=|sucsses_stat| sucsses_stat;
+    // let get_ps1=|success_stat| success_stat;
     let format_prompt = |pwd: &str, red_or_green: &str| {
         ps1_resolve.replace(
             "{pwd}",
@@ -317,7 +317,7 @@ fn main() {
         }
         temp_pwd = pwd.clone();
         
-        let input = rl.readline(format_prompt(&pwd,"").as_str()); // TODO: use the shellexpend
+        let input = rl.readline(format_prompt(&pwd,"").as_str()); // TODO: use the shellexpand
 
         match input {
             Ok(line) => {
