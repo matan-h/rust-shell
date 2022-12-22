@@ -6,7 +6,7 @@ use rustyline::{error::ReadlineError, Config};
 use rustyline::{Cmd, CompletionType, EditMode, Editor, KeyEvent};
 use shlex::Shlex;
 mod lineutils;
-
+mod ps1;
 use std::{
     collections::HashMap,
     env,
@@ -274,36 +274,61 @@ fn main() {
 
     let mut aliases: HashMap<String, String> = HashMap::new();
     let mut environment: HashMap<String, String> = HashMap::new();
+    
     for (key, val) in env::vars_os() {
         if let (Ok(k), Ok(v)) = (key.into_string(), val.into_string()) {
             environment.insert(k, v);
         }
     }
     // let a:HashMap<String,String> = env::vars_os().collect();
-    aliases.insert("l".to_string(), "exa".to_string());
-    environment.insert("HOME".to_string(), get_home_dir().unwrap_or("".to_string()));
+    aliases.insert("cls".to_string(), "printf '\\033[2J\\033[H'".to_string());
+    environment.insert("0".to_string(), "rust-shell".to_string());
     let mut pwd;
     let homedir = get_home_dir().unwrap();
     // let p = format!("{}> ", pwd.replace(&homedir, "~"));
     // helper.colored_prompt = "".into();
-    let ps1 = "${green}{pwd}$reset_color${red_or_green}>$reset_color"; // TODO: actually support PS1
+    
+    let host = hostname::get().unwrap().to_string_lossy().to_string();
+
     let green_color = "\x1b[1;32m";
     let reset_color = "\x1b[0m";
     let red_color = "\x1b[0;31m";
-    let ps1_resolve = ps1
-        .replace("${green}", green_color) // TODO use the shellexpand features
-        .replace("$reset_color", reset_color);
+    environment.insert("green".to_string(), green_color.to_string());
+    environment.insert("reset".to_string(), reset_color.to_string());
+    environment.insert("red".to_string(), red_color.to_string());
+    
+    let default_ps1_prompt = "${green}\\w${reset}${red_or_green}>${reset}"; // TODO: actually support PS1
+    environment.insert("PS1".to_string(), default_ps1_prompt.to_string());
     // .replace("{pwd}", pwd.replace(&homedir, "~").as_str());
     // let get_ps1=|success_stat| success_stat;
-    let format_prompt = |pwd: &str, red_or_green: &str| {
-        ps1_resolve.replace(
-            "{pwd}",
-            pwd.replace(&homedir, "~").as_str())
-                .replace("${red_or_green}", red_or_green)
-                // .as_str()
-    };
+    let format_prompt =
+        |pwd: &str, red_or_green: &str, environment: &mut HashMap<String, String>,ps1_prompt:&str| {
+            environment.insert("red_or_green".into(), red_or_green.into());
+            ps1::parse(
+                shellexpand::env_with_context_no_errors(ps1_prompt, |name: &str| -> Option<&str> {
+                    environment.get(name).map(|x| x.as_str())
+                })
+                .to_string(),
+                pwd.to_string(),host.to_string()
+                // hostname::get().unwrap().to_string_lossy().to_string(),
+            )
+            // .as_str()
+        };
     // rl.helper_mut().unwrap().colored_prompt = format_prompt(&pwd, green_color);
-    let mut temp_pwd:String="".to_string();
+    // let format_ps1 = || {
+    //     ps1::parse(
+    //         shellexpand::env_with_context_no_errors(ps1_prompt, |name: &str| -> Option<&str> {
+    //             environment.get(name).map(|x| x.as_str())
+    //         })
+    //         .to_string(),pwd,
+    //         host,
+    //     )
+    // };
+    let mut temp_pwd: String = "".to_string();
+    let mut temp_ps1: String = "".to_string();
+
+    let mut ps1env ;
+    let mut ps1_prompt = default_ps1_prompt;
     loop {
         pwd = env::current_dir()
             .unwrap()
@@ -311,29 +336,43 @@ fn main() {
             .into_string()
             .unwrap()
             .replace(&homedir, "~");
-        
-        if temp_pwd.to_string()!=pwd{
-            rl.helper_mut().unwrap().colored_prompt = format_prompt(&pwd, green_color);
+
+        if temp_pwd.to_string() != pwd
+        {
+            rl.helper_mut().unwrap().colored_prompt =
+                format_prompt(&pwd, green_color, &mut environment,ps1_prompt);
         }
+        if &temp_ps1.to_string() != environment.get("PS1").unwrap_or(&default_ps1_prompt.to_string().to_string()){
+            ps1env = environment.get("PS1").cloned().unwrap_or(default_ps1_prompt.to_string());
+            // println!("{}",ps1env);
+            ps1_prompt = ps1env.as_str();
+            rl.helper_mut().unwrap().colored_prompt =
+                format_prompt(&pwd, green_color, &mut environment,ps1_prompt);
+            // default_ps1_prompt = ps1env.as_str();
+            
+        }
+        temp_ps1 =  environment.get("PS1").unwrap_or(&default_ps1_prompt.to_string()).to_string();
         temp_pwd = pwd.clone();
-        
-        let input = rl.readline(format_prompt(&pwd,"").as_str()); // TODO: use the shellexpand
+        let input = rl.readline(format_prompt(&pwd, "", &mut environment,ps1_prompt).as_str()); // TODO: use the shellexpand
 
         match input {
             Ok(line) => {
                 let command = line.as_str();
                 rl.add_history_entry(command);
                 let ret = handle_command(command.to_string(), &mut aliases, &mut environment);
+                // io::stdout().flush().unwrap(); // try to flush the stdout for print without new line // TODO add flush to allow print without new line
                 match ret {
                     -1 => {
                         println!("exiting");
                         break;
                     }
                     0 => {
-                        rl.helper_mut().unwrap().colored_prompt = format_prompt(&pwd, green_color);
+                        rl.helper_mut().unwrap().colored_prompt =
+                            format_prompt(&pwd, green_color, &mut environment,ps1_prompt);
                     }
                     1 => {
-                        rl.helper_mut().unwrap().colored_prompt = format_prompt(&pwd, red_color);
+                        rl.helper_mut().unwrap().colored_prompt =
+                            format_prompt(&pwd, red_color, &mut environment,ps1_prompt);
                     }
                     _ => {}
                 }
