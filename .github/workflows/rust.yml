@@ -18,14 +18,14 @@ jobs:
           override: true
 
       - name: Build
-        run: cargo build --all --release && strip target/release/rust-shell && mv target/release/rust-shell target/release/rust-shell_amd64
+        run: cargo build --all --release && strip target/release/rust-shell && mv target/release/rust-shell target/release/rust-shell_linux
 
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            target/release/rust-shell_amd64
+            target/release/rust-shell_linux
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
