@@ -1,7 +1,12 @@
 [package]
 name = "rust-shell"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+description = "unix-like shell writen in rust "
+readme = "readme.md"
+repository = "https://github.com/matan-h/rust-shell"
+
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
