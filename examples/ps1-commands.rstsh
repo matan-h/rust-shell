@@ -1,0 +1,2 @@
+# using starship (based on their faq)
+export PS1="$(starship prompt --status=$exit_status)"

@@ -1,0 +1,14 @@
+# basic aliases example.
+
+# you can use alias with spaces - even better then bash
+alias v='nvim'    # one letter to nvim
+# fix common mistakes and typeos
+alias sl="ls"
+alias l="ls --color=yes"
+alias df='df -h'                                                # Human-readable sizes
+alias free='free -h'                                            # Human-readable sizes
+alias du="du -c -h"                                             # Human-readable sizes and total size
+alias ping="ping -c 5"                                          # Stop after 5 pings
+alias dmesg="sudo dmesg"                                        # automaticly add sudo to dmesg
+alias start="xdg-open"  # xdg-open:linux is "open":mac or "start":windows
+

@@ -1,0 +1,4 @@
+# example of basic exports. note rust-shell will copy all the environment variables of the shell running it. 
+export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$HOME/.local/share/gem/ruby/3.0.0/bin:$HOME/.cargo/bin/:$HOME/node_modules/.bin/:$PATH" 
+export EDITOR="nvim"
+export ANDROID_HOME="$HOME/Android/Sdk"
