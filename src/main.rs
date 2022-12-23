@@ -4,9 +4,11 @@ use rustyline::hint::HistoryHinter;
 use rustyline::validate::MatchingBracketValidator;
 use rustyline::{error::ReadlineError, Config};
 use rustyline::{Cmd, CompletionType, EditMode, Editor, KeyEvent};
+use regex::Regex;
 use shlex::Shlex;
 mod lineutils;
 mod ps1;
+use std::io::{self, Write};
 use std::{
     collections::HashMap,
     env,
@@ -20,6 +22,13 @@ use std::{
 //     NORMAL=0,
 //     ERROR=1,
 // }
+// fn is_debug()->bool{let arg1 = env::args().nth(1).unwrap_or_default();arg1=="--debug"}
+fn remove_colors(data: String) -> String {
+    let reg = "[\x1B]\\[[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]";//[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]";
+    let r: Regex = Regex::new(reg).unwrap();
+    // println!("replacing {:#?}",r.replace_all(data.as_str(), ""));
+    r.replace_all(data.as_str(), "").to_string()+"     "
+}
 
 fn handle_command(
     raw_command: String,
@@ -134,29 +143,23 @@ fn handle_command(
                 }
             }
             "export" => {
-                let the_command = args.get(0);
                 // TODO : merge with alias since its the same code
-                if the_command.is_none() {
+                let full_arg = args.join(" ");
+                let full_arg_trim = full_arg.trim();
+
+                if full_arg_trim.is_empty() {
                     println!("environment: {:#?}", environment);
-                } else {
-                    let exportlist: Vec<&str> = the_command.unwrap().split("=").collect();
-                    if exportlist.len() >= 2 {
-                        let s1 = exportlist.get(0).unwrap();
-                        let s2 = exportlist.get(1).unwrap();
-                        environment.insert(s1.to_string(), s2.to_string());
-                        env::set_var(s1.to_string(), s2.to_string());
-                    } else {
-                        if environment.contains_key(&exportlist.get(0).unwrap().to_string()) {
-                            println!(
-                                "{}",
-                                environment
-                                    .get(&exportlist.get(0).unwrap().to_string())
-                                    .unwrap()
-                            )
-                        }
-                    }
                 }
-            }
+                if full_arg.contains("=") {
+                    let (key, value) = full_arg_trim.split_once("=").unwrap();
+                    environment.insert(key.trim().to_string(), value.trim().to_string());
+                    env::set_var(key.trim().to_string(), value.trim().to_string());
+                } else if environment.contains_key(full_arg_trim) {
+                    println!("{}", environment.get(full_arg_trim).unwrap())
+                }
+                    
+                }
+            
             "alias" => {
                 let full_arg = args.join(" ");
                 let full_arg_trim = full_arg.trim();
@@ -177,6 +180,7 @@ fn handle_command(
                 }
             }
             "exit" => return -1,
+            "flush"=>io::stdout().flush().unwrap_or_default(), // TODO : this is not working....
             command => {
                 let stdin = previous_command.map_or(Stdio::inherit(), |output: Child| {
                     Stdio::from(output.stdout.unwrap())
@@ -192,7 +196,6 @@ fn handle_command(
                     Stdio::inherit()
                 };
                 // println!("running, {:#?} ({})", command, args.join(" ")); // just for debug
-
                 let output = Command::new(command)
                     .args(args)
                     .stdin(stdin)
@@ -222,6 +225,8 @@ fn handle_command(
     if let Some(mut final_command) = previous_command {
         // block until the final command has finished
         let code = final_command.wait().expect("command error");
+
+        io::stdout().flush().unwrap_or_default();
         last_code_err = (!code.success()).into();
     }
 
@@ -243,10 +248,6 @@ fn get_home_dir() -> Option<String> {
     return Some(home_dir);
 }
 fn main() {
-    // let mut rl = Editor::<()>::new().expect("readline error");
-
-    // fn home_dir_fn() -> Option<String> { Some(home_dir.into()) }
-    // let home_dir_fn  = || -> Option<String> {Some((home_dir.into()))};
 
     let config = Config::builder()
         .history_ignore_space(true)
@@ -289,7 +290,7 @@ fn main() {
     // helper.colored_prompt = "".into();
     
     let host = hostname::get().unwrap().to_string_lossy().to_string();
-
+    
     let green_color = "\x1b[1;32m";
     let reset_color = "\x1b[0m";
     let red_color = "\x1b[0;31m";
@@ -297,38 +298,36 @@ fn main() {
     environment.insert("reset".to_string(), reset_color.to_string());
     environment.insert("red".to_string(), red_color.to_string());
     
-    let default_ps1_prompt = "${green}\\w${reset}${red_or_green}>${reset}"; // TODO: actually support PS1
+    let default_ps1_prompt = "${green}\\w${reset}${red_or_green}>${reset}";
     environment.insert("PS1".to_string(), default_ps1_prompt.to_string());
     // .replace("{pwd}", pwd.replace(&homedir, "~").as_str());
     // let get_ps1=|success_stat| success_stat;
     let format_prompt =
-        |pwd: &str, red_or_green: &str, environment: &mut HashMap<String, String>,ps1_prompt:&str| {
-            environment.insert("red_or_green".into(), red_or_green.into());
-            ps1::parse(
+        |pwd: &str, exit_status: i32, environment: &mut HashMap<String, String>,ps1_prompt:&str| {
+            let red_or_green = if exit_status==0{green_color} else{red_color};
+            environment.insert("exit_status".into(),exit_status.to_string()) ;
+            environment.insert("red_or_green".into(),red_or_green.to_string()) ;
+            // println!("format prompt: exit:{}",exit_status);
+            
+            let ret = ps1::parse(
                 shellexpand::env_with_context_no_errors(ps1_prompt, |name: &str| -> Option<&str> {
                     environment.get(name).map(|x| x.as_str())
                 })
                 .to_string(),
                 pwd.to_string(),host.to_string()
                 // hostname::get().unwrap().to_string_lossy().to_string(),
-            )
+            );
+            environment.remove("exit_status"); // alow to define custom ps1 with exit_status variable 
+            environment.remove("red_or_green");  
+            return ret;
             // .as_str()
         };
-    // rl.helper_mut().unwrap().colored_prompt = format_prompt(&pwd, green_color);
-    // let format_ps1 = || {
-    //     ps1::parse(
-    //         shellexpand::env_with_context_no_errors(ps1_prompt, |name: &str| -> Option<&str> {
-    //             environment.get(name).map(|x| x.as_str())
-    //         })
-    //         .to_string(),pwd,
-    //         host,
-    //     )
-    // };
     let mut temp_pwd: String = "".to_string();
     let mut temp_ps1: String = "".to_string();
 
     let mut ps1env ;
-    let mut ps1_prompt = default_ps1_prompt;
+    let mut ps1_prompt = "";
+    let mut ret = 0;
     loop {
         pwd = env::current_dir()
             .unwrap()
@@ -340,41 +339,39 @@ fn main() {
         if temp_pwd.to_string() != pwd
         {
             rl.helper_mut().unwrap().colored_prompt =
-                format_prompt(&pwd, green_color, &mut environment,ps1_prompt);
+                format_prompt(&pwd, 0, &mut environment,ps1_prompt);
         }
         if &temp_ps1.to_string() != environment.get("PS1").unwrap_or(&default_ps1_prompt.to_string().to_string()){
             ps1env = environment.get("PS1").cloned().unwrap_or(default_ps1_prompt.to_string());
             // println!("{}",ps1env);
             ps1_prompt = ps1env.as_str();
             rl.helper_mut().unwrap().colored_prompt =
-                format_prompt(&pwd, green_color, &mut environment,ps1_prompt);
-            // default_ps1_prompt = ps1env.as_str();
+                format_prompt(&pwd, 0, &mut environment,ps1_prompt);
             
         }
         temp_ps1 =  environment.get("PS1").unwrap_or(&default_ps1_prompt.to_string()).to_string();
         temp_pwd = pwd.clone();
-        let input = rl.readline(format_prompt(&pwd, "", &mut environment,ps1_prompt).as_str()); // TODO: use the shellexpand
+        // let a = &remove_colors(rl.helper_mut().unwrap().colored_prompt.as_mut().to_string());
+        // let uncolord = &remove_colors(rl.helper_mut().unwrap().colored_prompt.as_mut().to_string());
+        // let exit_status:i32 = environment.get("exit_status").unwrap_or(&"".to_string()).parse::<i32>().unwrap_or(0);
+        let uncolord = &remove_colors(format_prompt(&pwd,ret,&mut environment,ps1_prompt));
+
+        let input = rl.readline(&uncolord.trim());
+        // let input = rl.readline(format_prompt(&pwd, "", &mut environment,ps1_prompt).as_str()); // TODO: use the shellexpand
 
         match input {
             Ok(line) => {
                 let command = line.as_str();
                 rl.add_history_entry(command);
-                let ret = handle_command(command.to_string(), &mut aliases, &mut environment);
+                ret = handle_command(command.to_string(), &mut aliases, &mut environment);
                 // io::stdout().flush().unwrap(); // try to flush the stdout for print without new line // TODO add flush to allow print without new line
-                match ret {
-                    -1 => {
-                        println!("exiting");
-                        break;
-                    }
-                    0 => {
-                        rl.helper_mut().unwrap().colored_prompt =
-                            format_prompt(&pwd, green_color, &mut environment,ps1_prompt);
-                    }
-                    1 => {
-                        rl.helper_mut().unwrap().colored_prompt =
-                            format_prompt(&pwd, red_color, &mut environment,ps1_prompt);
-                    }
-                    _ => {}
+                if ret==-1{
+                    println!("exit");
+                    break;
+                }
+                else{
+                    rl.helper_mut().unwrap().colored_prompt =
+                            format_prompt(&pwd, ret, &mut environment,ps1_prompt);
                 }
             }
             Err(ReadlineError::Interrupted) => {

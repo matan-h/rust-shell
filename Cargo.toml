@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 chrono = "0.4.23"
 hostname = "0.3.1"
+regex = "1.7.0"
 rustyline = "10.0.0"
 rustyline-derive = "0.7.0"
 shellexpand = "3.0.0"

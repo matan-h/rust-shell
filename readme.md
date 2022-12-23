@@ -3,7 +3,7 @@ a unix shell written in rust
 ![screenshot of rust-shell](screenshots/2022-12-21_22-04.png)
 ## Features
 * support all bash comments
-* support PS1 variable (currently without commands, so just escapes like `\u`) - even something like `export PS1="\[\e[31m\][\[\e[m\]\[\e[38;5;172m\]\u\[\e[m\]@\[\e[38;5;153m\]\h\[\e[m\] \[\e[38;5;214m\]\W\[\e[m\]\[\e[31m\]]\[\e[m\]\\$ " # ]]]]]]]]]]`
+* support PS1 variable - with escapes and even *with some commands* : you can use the (recommended) `starship` prompt with `export PS1="$(starship prompt --status=$exit_status)"`
 * emacs editing mode ,like what `bash` have (using rustyline)
 * fish-like autosuggestion
 * support aliases (`alias ls=exa` and even `alias ls = 'ls --color=tty'`)
