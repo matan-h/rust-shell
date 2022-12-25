@@ -1,6 +1,6 @@
 # rust-shell
 a unix shell written in rust
-![screenshot of rust-shell](screenshots/2022-12-21_22-04.png)
+![screenshot of rust-shell](screenshots/2022-12-25_09-43.png)
 ## Features
 * support all bash comments
 * support PS1 variable - with escapes and even *with some commands* : for example, you can use the [starship](starship.rs/) prompt with `export PS1="$(starship prompt --status=$exit_status)"`
