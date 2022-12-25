@@ -11,10 +11,14 @@ repository = "https://github.com/matan-h/rust-shell"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ansi_term = "0.12.1"
 chrono = "0.4.23"
+colored = "2.0.0"
 hostname = "0.3.1"
+memchr = "2.5.0"
 regex = "1.7.0"
 rustyline = "10.0.0"
 rustyline-derive = "0.7.0"
 shellexpand = "3.0.0"
 shlex = "1.1.0"
+which = "4.3.0"

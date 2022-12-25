@@ -1,5 +1,4 @@
 use rustyline::completion::FilenameCompleter;
-use rustyline::highlight::MatchingBracketHighlighter;
 use rustyline::hint::HistoryHinter;
 use rustyline::validate::MatchingBracketValidator;
 use rustyline::{error::ReadlineError, Config};
@@ -257,7 +256,7 @@ fn main() {
         .build();
     let h = lineutils::LineHelper {
         completer: FilenameCompleter::new(),
-        highlighter: MatchingBracketHighlighter::new(),
+        highlighter: lineutils::CommandHighlighter::new(),
         hinter: HistoryHinter {},
         colored_prompt: "".to_owned(),
         validator: MatchingBracketValidator::new(),
