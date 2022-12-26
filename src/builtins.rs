@@ -1,7 +1,7 @@
 use std::{collections::HashMap, env, path::Path,};
 
 use crate::{CommandStatus, source};
-type Builtin = fn(args:&Vec<String>,environment:&mut HashMap<String, String>,aliases:&mut HashMap<String, String>) -> CommandStatus;
+pub type Builtin = fn(args:&Vec<String>,environment:&mut HashMap<String, String>,aliases:&mut HashMap<String, String>) -> CommandStatus;
 
 fn cd(args: &Vec<String>,_:&mut HashMap<String, String>,__:&mut HashMap<String, String>) -> CommandStatus {
     let new_dir = args.get(0).map_or("/", |x| &*x);

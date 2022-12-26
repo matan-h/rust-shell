@@ -56,9 +56,6 @@ pub fn parse(ps1: String, pwd: String, hostname: String) -> String {
                     })
                     .unwrap_or("");
                 let output = run_command(the_command.to_string());
-                if is_debug(){
-                    dbg!("ps1 command output:{}->{}",the_command,output.escape_debug());
-                }
                 if output.is_empty() {
                     continue;
                 }

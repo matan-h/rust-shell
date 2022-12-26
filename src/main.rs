@@ -48,7 +48,7 @@ fn handle_command(
     let env2 = environment.clone();
     let get_env2 = |name: &str| -> Option<&str> { env2.get(name).map(|x| x.as_str()) };
 
-    let builtins_map = builtins::build_map();
+    let builtins_map = builtins::build_map(); // TODO: create only one map, and pass it.
     // must be peekable so we know when we are on the last command
     let command = raw_command.split("#").into_iter().next().unwrap();
     // let checker =
@@ -260,12 +260,7 @@ fn main() {
     // let a:HashMap<String,String> = env::vars_os().collect();
     aliases.insert("cls".to_string(), "printf '\\033[2J\\033[H'".to_string());
     environment.insert("0".to_string(), "rust-shell".to_string());
-    if c_file.exists() {
-        let ret = source(vec!(c_file.to_string_lossy().to_string()), &mut environment, &mut aliases);
-        if let CommandStatus::EXIT(i) =  ret{
-            exit(i);
-        }
-    }
+
     let config = Config::builder()
         .history_ignore_space(true)
         .bell_style(rustyline::config::BellStyle::None)
@@ -306,6 +301,12 @@ fn main() {
 
     let default_ps1_prompt = "${green}\\w${reset}${red_or_green}>${reset}";
     environment.insert("PS1".to_string(), default_ps1_prompt.to_string());
+    if c_file.exists() {
+        let ret = source(vec!(c_file.to_string_lossy().to_string()), &mut environment, &mut aliases);
+        if let CommandStatus::EXIT(i) =  ret{
+            exit(i);
+        }
+    }
     // .replace("{pwd}", pwd.replace(&homedir, "~").as_str());
     // let get_ps1=|success_stat| success_stat;
     let format_prompt = |pwd: &str,

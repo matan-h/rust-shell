@@ -1,4 +1,5 @@
 use std::borrow::Cow::{self, Borrowed, Owned};
+use std::collections::HashMap;
 
 
 use rustyline::completion::FilenameCompleter;
@@ -7,6 +8,8 @@ use rustyline::highlight::{Highlighter};
 use rustyline::hint::HistoryHinter;
 use rustyline::validate::MatchingBracketValidator;
 use rustyline_derive::{Completer, Helper, Hinter, Validator};
+
+use crate::builtins::{Builtin, self};
 
 
 
@@ -57,6 +60,10 @@ impl Highlighter for LineHelper {
 /// Highlight matching bracket when typed or cursor moved on.
 // #[derive()]
 pub struct CommandHighlighter {
+    builtins_map:HashMap<String, Builtin>,
+    invalid_color:String,
+    exe_color:String,
+    builtins_color:String,
 }
 
 impl CommandHighlighter {
@@ -64,6 +71,10 @@ impl CommandHighlighter {
     #[must_use]
     pub fn new() -> Self {
         Self {
+            builtins_map : builtins::build_map(),
+            invalid_color: "\x1b[1;31m".to_string(),
+            exe_color:"\x1b[0;35m".to_string(),
+            builtins_color:"\x1b[38;2;255;215;0m".to_string()
         }
     }
 }
@@ -73,7 +84,13 @@ impl Highlighter for CommandHighlighter {
             return  Borrowed(line);
         }
         let exe = line.trim().split_ascii_whitespace().next().unwrap_or_default();
-        let executable_color = if which::which(exe).is_ok(){"\x1b[0;35m"} else {"\x1b[1;31m"};
+        let executable_color;
+        if self.builtins_map.contains_key(exe){
+            executable_color = self.builtins_color.clone()
+        }
+        else {
+            executable_color = if which::which(exe).is_ok(){self.exe_color.clone()} else {self.invalid_color.clone()};
+        }
         let mut copy = line.to_owned();
         let index = line.find(" ").unwrap_or_default();
         copy.replace_range(0..index,&format!("{}{}\x1b[0m", executable_color,exe));
@@ -85,7 +102,7 @@ impl Highlighter for CommandHighlighter {
     }
 
     fn highlight_char(&self, line: &str, _pos: usize) -> bool {
-        // will highlight matching brace/bracket/parenthesis if it exists
+        // will highlight matching exe if it exists
 
         // self.bracket.set(check_bracket(line, pos));
         // self.bracket.get().is_some()
