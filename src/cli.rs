@@ -8,8 +8,9 @@ pub fn parse() -> clap::ArgMatches{
         .arg_required_else_help(false)
         .author("matan-h")
         .arg(
-         arg!(-'c' --"rc-file" <PATH>).required(false).value_parser(clap::value_parser!(std::path::PathBuf))
+         arg!(-'f' --"rc-file" <PATH>).required(false).value_parser(clap::value_parser!(std::path::PathBuf)).help("rc file path")
       )
+      .arg(arg!(--"no-rc").required(false).value_parser(clap::builder::ValueParser::bool()).help("do not run the rc file"))
       .arg(arg!(-'#' --"debug").required(false))
       
       ;
