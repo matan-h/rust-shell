@@ -68,7 +68,7 @@ fn handle_command(
         .split(|n| n == "||" || n == "&&" || n == ";")
         .peekable();
 
-    let mut previous_code:CommandStatus = CommandStatus::NORMAL;
+    let mut previous_code: CommandStatus = CommandStatus::NORMAL;
 
     while let Some(logic_parts) = commands_list.next() {
         let mut commands = logic_parts.split(|n| n == "|").peekable();
@@ -192,7 +192,7 @@ fn handle_command(
             if code.success() {
                 previous_code = CommandStatus::NORMAL;
             } else {
-                previous_code =CommandStatus::ERROR(code.code().unwrap_or(1));
+                previous_code = CommandStatus::ERROR(code.code().unwrap_or(1));
             }
             // last_code_err = (!code.success()).into();
         }
@@ -258,7 +258,8 @@ fn main() {
         .get_one::<std::path::PathBuf>("rc-file")
         .unwrap_or(&binding);
     let no_rc = args.get_one::<bool>("no-rc").unwrap_or(&false);
-
+    let binding = "".to_string();
+    let command_to_run: &String = args.get_one::<String>("command").unwrap_or(&binding);
     let mut aliases: HashMap<String, String> = HashMap::new();
     let mut environment: HashMap<String, String> = HashMap::new();
 
@@ -311,6 +312,11 @@ fn main() {
 
     let default_ps1_prompt = "${green}\\w${reset}${red_or_green}>${reset}";
     environment.insert("PS1".to_string(), default_ps1_prompt.to_string());
+    if !command_to_run.is_empty() {
+        handle_command(command_to_run.to_string(), &mut aliases, &mut environment);
+        return;
+    }
+
     if !no_rc {
         let rcfile = Path::new(&homedir).join(".rustshellrc");
         if rcfile.exists() {
@@ -379,7 +385,7 @@ fn main() {
 
     let mut ps1env;
     let mut ps1_prompt = "";
-    let mut ret:CommandStatus;
+    let mut ret: CommandStatus;
     let exit_code: i32 = loop {
         pwd = env::current_dir()
             .unwrap()

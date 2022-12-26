@@ -72,9 +72,9 @@ impl CommandHighlighter {
     pub fn new() -> Self {
         Self {
             builtins_map : builtins::build_map(),
-            invalid_color: "\x1b[1;31m".to_string(),
-            exe_color:"\x1b[0;35m".to_string(),
-            builtins_color:"\x1b[38;2;255;215;0m".to_string()
+            invalid_color: "\x1b[1;31m".to_string(), // bold and red
+            exe_color:"\x1b[0;35m".to_string(), // purple
+            builtins_color:"\x1b[38;2;255;215;0m".to_string() // RGB(255, 215, 0)
         }
     }
 }

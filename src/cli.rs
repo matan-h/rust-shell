@@ -7,10 +7,11 @@ pub fn parse() -> clap::ArgMatches{
         .subcommand_required(false)
         .arg_required_else_help(false)
         .author("matan-h")
+        .arg(arg!(-'c' --"command" <command>).required(false).value_parser(clap::value_parser!(String)).help("command to run").default_value(""))
         .arg(
          arg!(-'f' --"rc-file" <PATH>).required(false).value_parser(clap::value_parser!(std::path::PathBuf)).help("rc file path")
       )
-      .arg(arg!(--"no-rc").required(false).value_parser(clap::builder::ValueParser::bool()).help("do not run the rc file"))
+      .arg(arg!(--"no-rc").required(false).value_parser(clap::builder::ValueParser::bool()).help("flag for not running the rc file"))
       .arg(arg!(-'#' --"debug").required(false))
       
       ;
