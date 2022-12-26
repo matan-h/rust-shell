@@ -1,49 +1,60 @@
+
+use regex::Regex;
 use rustyline::completion::FilenameCompleter;
 use rustyline::hint::HistoryHinter;
 use rustyline::validate::MatchingBracketValidator;
 use rustyline::{error::ReadlineError, Config};
 use rustyline::{Cmd, CompletionType, EditMode, Editor, KeyEvent};
-use regex::Regex;
 use shlex::Shlex;
+mod builtins;
+mod cli;
 mod lineutils;
 mod ps1;
 use std::io::{self, Write};
+use std::process::exit;
 use std::{
     collections::HashMap,
     env,
     fs::File,
     io::{BufRead, BufReader},
-    path::Path,
     process::{Child, Command, Stdio},
 };
-// enum command_status{
-//     EXIT=-1,
-//     NORMAL=0,
-//     ERROR=1,
-// }
-// fn is_debug()->bool{let arg1 = env::args().nth(1).unwrap_or_default();arg1=="--debug"}
+fn is_debug() -> bool {
+    let arg1 = env::args().nth(1).unwrap_or_default();
+    arg1 == "--debug"
+}
+
+#[derive(Clone)]
+pub enum CommandStatus {
+    EXIT(i32),
+    NORMAL,
+    Message(String, i32),
+    ERROR(i32),
+}
+
 fn remove_colors(data: String) -> String {
-    let reg = "[\x1B]\\[[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]";//[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]";
+    let reg = "[\x1B]\\[[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]"; //[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]";
     let r: Regex = Regex::new(reg).unwrap();
     // println!("replacing {:#?}",r.replace_all(data.as_str(), ""));
-    r.replace_all(data.as_str(), "").to_string()+"     "
+    r.replace_all(data.as_str(), "").to_string() + "     "
 }
 
 fn handle_command(
     raw_command: String,
     aliases: &mut HashMap<String, String>,
     environment: &mut HashMap<String, String>,
-) -> i32 {
-    let mut last_code_err = 0;
+) -> CommandStatus {
+    let mut last_code_err = CommandStatus::NORMAL;
     let env2 = environment.clone();
     let get_env2 = |name: &str| -> Option<&str> { env2.get(name).map(|x| x.as_str()) };
 
+    let builtins_map = builtins::build_map();
     // must be peekable so we know when we are on the last command
     let command = raw_command.split("#").into_iter().next().unwrap();
     // let checker =
     // println!("checker '{}'",checker);
     if command.trim().is_empty() || command.trim().starts_with("#") {
-        return 0;
+        return CommandStatus::NORMAL;
     }
     let mut shl = Shlex::new(&command);
     let parts: Vec<String> = shl.by_ref().collect();
@@ -51,14 +62,14 @@ fn handle_command(
 
     // let parts_err = shlex::split(&command);//.expect("shlex split not working");
     if shl.had_error {
-        println!("syntax error '{}'", command);
-        return 1;
+        return CommandStatus::Message(format!("syntax error '{}'", command), 1);
     }
 
     let mut commands = parts.split(|n| n == "|").peekable();
     // let mut commands = command.trim().split(" | ").peekable();
 
     let mut previous_command = None;
+    // let mut previous_builtin:Option<String> = None; // TODO: pipe from builtins
     while let Some(parts) = commands.next() {
         // let args = parts.split_last().unwrap();
         // if parts.len()>1 // TODO
@@ -69,7 +80,9 @@ fn handle_command(
 
         // let command = parts.next().unwrap();
         let mut command = parts.first().unwrap().as_str();
-        // println!("%'args:{:#?},command:{:#?}'%",args,command);
+        if is_debug(){
+            println!("handle command:{:#?}",command);
+        }
         // let command = parts.first().unwrap();
         if aliases.contains_key(command) {
             let full_raw = aliases.get(command).unwrap().as_str();
@@ -106,118 +119,62 @@ fn handle_command(
             }
         }
 
-        match command {
-            "cd" => {
-                let new_dir = args.get(0).map_or("/", |x| &*x);
-                let root = Path::new(new_dir);
-                if let Err(e) = env::set_current_dir(&root) {
-                    eprintln!("{}", e);
+        if builtins_map.contains_key(command) {
+            let built = builtins_map.get(command).unwrap();
+            let stat = built(&args, environment, aliases);
+            match stat {
+                CommandStatus::EXIT(_) => return stat, // TODO
+                CommandStatus::ERROR(_) => {}
+                CommandStatus::NORMAL => {}
+                CommandStatus::Message(s, code) => {
+                    if code == 0 {
+                        println!("{}", s);
+                        // previous_builtin = Some(s); // TODO : pipe from builtins
+                        // previous_command = Some(s);
+                    } else {
+                        eprintln!("{}", s)
+                    }
+                }
+            }
+            // previous_command = None;
+        } else {
+            let stdin = previous_command.map_or(Stdio::inherit(), |output: Child| {
+                Stdio::from(output.stdout.unwrap())
+            });
+
+            let stdout = if commands.peek().is_some() {
+                // there is another command piped behind this one
+                // prepare to send output to the next command
+                Stdio::piped()
+            } else {
+                // there are no more commands piped behind this one
+                // send output to shell stdout
+                Stdio::inherit()
+            };
+            // println!("running, {:#?} ({})", command, args.join(" ")); // just for debug
+            let output = Command::new(command)
+                .args(args)
+                .stdin(stdin)
+                .stdout(stdout)
+                .spawn();
+
+            match output {
+                Ok(output) => {
+                    previous_command = Some(output);
                 }
 
-                previous_command = None;
-            }
-            "source" => {
-                for file in args.into_iter() {
-                    let filename = file.clone();
-                    let file_err = File::open(file);
-                    let bufio = match file_err {
-                        Err(_) => {
-                            println!("cannot open file: {}", filename);
-                            continue;
-                        }
-                        Ok(file) => file,
+                Err(e) => {
+                    let emessage = e.to_string();
+                    let m = match e.kind() {
+                        std::io::ErrorKind::NotFound => "command not found",
+                        _ => emessage.as_str(),
                     };
-                    let reader = BufReader::new(bufio);
-                    // reader.lines();
-                    for line in reader.lines() {
-                        let real_command = line.expect("cannot open file");
-                        if real_command.is_empty() {
-                            continue;
-                        }
-                        let ret = handle_command(real_command, aliases, environment); // 1-error status,0-normal status,-1-exit now.
-                        if ret == -1 {
-                            return ret;
-                        }
-                    }
+                    eprintln!("{}: {}", command, m);
+                    last_code_err =
+                        CommandStatus::Message(format!("{}: {}", command, m), 1);
+                    previous_command = None;
                 }
-            }
-            "export" => {
-                // TODO : merge with alias since its the same code
-                let full_arg = args.join(" ");
-                let full_arg_trim = full_arg.trim();
-
-                if full_arg_trim.is_empty() {
-                    println!("environment: {:#?}", environment);
-                }
-                if full_arg.contains("=") {
-                    let (key, value) = full_arg_trim.split_once("=").unwrap();
-                    environment.insert(key.trim().to_string(), value.trim().to_string());
-                    env::set_var(key.trim().to_string(), value.trim().to_string());
-                } else if environment.contains_key(full_arg_trim) {
-                    println!("{}", environment.get(full_arg_trim).unwrap())
-                }
-                    
-                }
-            
-            "alias" => {
-                let full_arg = args.join(" ");
-                let full_arg_trim = full_arg.trim();
-                // full_arg = full_arg.trim();
-
-                // println!("alias {:#?}",args);
-
-                if full_arg_trim.is_empty() {
-                    println!("aliases: {:#?}", aliases);
-                    continue;
-                }
-                if full_arg.contains("=") {
-                    let (key, value) = full_arg_trim.split_once("=").unwrap();
-                    aliases.insert(key.trim().to_string(), value.trim().to_string());
-                    // insert key:value to aliases
-                } else if aliases.contains_key(full_arg_trim) {
-                    println!("{}", aliases.get(full_arg_trim).unwrap())
-                }
-            }
-            "exit" => return -1,
-            "flush"=>io::stdout().flush().unwrap_or_default(), // TODO : this is not working....
-            command => {
-                let stdin = previous_command.map_or(Stdio::inherit(), |output: Child| {
-                    Stdio::from(output.stdout.unwrap())
-                });
-
-                let stdout = if commands.peek().is_some() {
-                    // there is another command piped behind this one
-                    // prepare to send output to the next command
-                    Stdio::piped()
-                } else {
-                    // there are no more commands piped behind this one
-                    // send output to shell stdout
-                    Stdio::inherit()
-                };
-                // println!("running, {:#?} ({})", command, args.join(" ")); // just for debug
-                let output = Command::new(command)
-                    .args(args)
-                    .stdin(stdin)
-                    .stdout(stdout)
-                    .spawn();
-
-                match output {
-                    Ok(output) => {
-                        previous_command = Some(output);
-                    }
-
-                    Err(e) => {
-                        let emessage = e.to_string();
-                        let m = match e.kind() {
-                            std::io::ErrorKind::NotFound => "command not found",
-                            _ => emessage.as_str(),
-                        };
-                        eprintln!("{}: {}", command, m);
-                        previous_command = None;
-                        last_code_err = 1;
-                    }
-                };
-            }
+            };
         }
     }
 
@@ -226,11 +183,51 @@ fn handle_command(
         let code = final_command.wait().expect("command error");
 
         io::stdout().flush().unwrap_or_default();
-        last_code_err = (!code.success()).into();
+        if code.success() {
+            return CommandStatus::NORMAL;
+        } else {
+            return CommandStatus::ERROR(code.code().unwrap_or(1));
+        }
+        // last_code_err = (!code.success()).into();
     }
 
     return last_code_err;
 }
+
+fn source(
+    c_files: Vec<String>,
+    environment: &mut HashMap<String, String>,
+    aliases: &mut HashMap<String, String>,
+) -> CommandStatus {
+    let mut a = CommandStatus::NORMAL;
+    for file in c_files {
+        let filename = file.clone();
+        let file_err = File::open(file);
+        let bufio = match file_err {
+            Err(_) => {
+                println!("cannot open file: {}", filename);
+                a = CommandStatus::ERROR(1);
+                continue;
+            }
+            Ok(file) => file,
+        };
+
+        let reader = BufReader::new(bufio);
+        // reader.lines();
+        for line in reader.lines() {
+            let real_command = line.expect("cannot open file");
+            if real_command.is_empty() {
+                continue;
+            }
+            let ret = handle_command(real_command, aliases, environment); // 1-error status,0-normal status,-1-exit now.
+            if let CommandStatus::EXIT(c) = ret {
+                return CommandStatus::EXIT(c);
+            }
+        }
+    }
+    return a;
+}
+
 fn get_home_dir() -> Option<String> {
     let home_dir_error = env::var("HOME");
     let home_dir: String;
@@ -247,7 +244,28 @@ fn get_home_dir() -> Option<String> {
     return Some(home_dir);
 }
 fn main() {
+    let args = cli::parse();
+    
+    let binding = std::path::PathBuf::new();
+    let c_file = args.get_one::<std::path::PathBuf>("rc-file").unwrap_or(&binding);
 
+    let mut aliases: HashMap<String, String> = HashMap::new();
+    let mut environment: HashMap<String, String> = HashMap::new();
+
+    for (key, val) in env::vars_os() {
+        if let (Ok(k), Ok(v)) = (key.into_string(), val.into_string()) {
+            environment.insert(k, v);
+        }
+    }
+    // let a:HashMap<String,String> = env::vars_os().collect();
+    aliases.insert("cls".to_string(), "printf '\\033[2J\\033[H'".to_string());
+    environment.insert("0".to_string(), "rust-shell".to_string());
+    if c_file.exists() {
+        let ret = source(vec!(c_file.to_string_lossy().to_string()), &mut environment, &mut aliases);
+        if let CommandStatus::EXIT(i) =  ret{
+            exit(i);
+        }
+    }
     let config = Config::builder()
         .history_ignore_space(true)
         .bell_style(rustyline::config::BellStyle::None)
@@ -272,62 +290,65 @@ fn main() {
     }
     // let p = format!("{}> ",get_home_dir().unwrap_or("".into()));
 
-    let mut aliases: HashMap<String, String> = HashMap::new();
-    let mut environment: HashMap<String, String> = HashMap::new();
-    
-    for (key, val) in env::vars_os() {
-        if let (Ok(k), Ok(v)) = (key.into_string(), val.into_string()) {
-            environment.insert(k, v);
-        }
-    }
-    // let a:HashMap<String,String> = env::vars_os().collect();
-    aliases.insert("cls".to_string(), "printf '\\033[2J\\033[H'".to_string());
-    environment.insert("0".to_string(), "rust-shell".to_string());
     let mut pwd;
     let homedir = get_home_dir().unwrap();
     // let p = format!("{}> ", pwd.replace(&homedir, "~"));
     // helper.colored_prompt = "".into();
-    
+
     let host = hostname::get().unwrap().to_string_lossy().to_string();
-    
+
     let green_color = "\x1b[1;32m";
     let reset_color = "\x1b[0m";
     let red_color = "\x1b[0;31m";
     environment.insert("green".to_string(), green_color.to_string());
     environment.insert("reset".to_string(), reset_color.to_string());
     environment.insert("red".to_string(), red_color.to_string());
-    
+
     let default_ps1_prompt = "${green}\\w${reset}${red_or_green}>${reset}";
     environment.insert("PS1".to_string(), default_ps1_prompt.to_string());
     // .replace("{pwd}", pwd.replace(&homedir, "~").as_str());
     // let get_ps1=|success_stat| success_stat;
-    let format_prompt =
-        |pwd: &str, exit_status: i32, environment: &mut HashMap<String, String>,ps1_prompt:&str| {
-            let red_or_green = if exit_status==0{green_color} else{red_color};
-            environment.insert("exit_status".into(),exit_status.to_string()) ;
-            environment.insert("red_or_green".into(),red_or_green.to_string()) ;
-            // println!("format prompt: exit:{}",exit_status);
-            
-            let ret = ps1::parse(
-                shellexpand::env_with_context_no_errors(ps1_prompt, |name: &str| -> Option<&str> {
-                    environment.get(name).map(|x| x.as_str())
-                })
-                .to_string(),
-                pwd.to_string(),host.to_string()
-                // hostname::get().unwrap().to_string_lossy().to_string(),
-            );
-            environment.remove("exit_status"); // alow to define custom ps1 with exit_status variable 
-            environment.remove("red_or_green");  
-            return ret;
-            // .as_str()
+    let format_prompt = |pwd: &str,
+                         command_status: CommandStatus,
+                         environment: &mut HashMap<String, String>,
+                         ps1_prompt: &str| {
+        let mut exit_status = 0;
+        if let CommandStatus::EXIT(n) = command_status {
+            exit_status = n;
+        } else if let CommandStatus::ERROR(n) = command_status {
+            exit_status = n;
+        } else if let CommandStatus::Message(_, n) = command_status {
+            exit_status = n;
+        }
+        let red_or_green = if exit_status == 0 {
+            green_color
+        } else {
+            red_color
         };
+        environment.insert("exit_status".into(), exit_status.to_string());
+        environment.insert("red_or_green".into(), red_or_green.to_string());
+        // println!("format prompt: exit:{}",exit_status);
+
+        let ret = ps1::parse(
+            shellexpand::env_with_context_no_errors(ps1_prompt, |name: &str| -> Option<&str> {
+                environment.get(name).map(|x| x.as_str())
+            })
+            .to_string(),
+            pwd.to_string(),
+            host.to_string(), // hostname::get().unwrap().to_string_lossy().to_string(),
+        );
+        environment.remove("exit_status"); // alow to define custom ps1 with exit_status variable
+        environment.remove("red_or_green");
+        return ret;
+        // .as_str()
+    };
     let mut temp_pwd: String = "".to_string();
     let mut temp_ps1: String = "".to_string();
 
-    let mut ps1env ;
+    let mut ps1env;
     let mut ps1_prompt = "";
-    let mut ret = 0;
-    loop {
+    let mut ret = CommandStatus::NORMAL;
+    let exit_code: i32 = loop {
         pwd = env::current_dir()
             .unwrap()
             .into_os_string()
@@ -335,25 +356,33 @@ fn main() {
             .unwrap()
             .replace(&homedir, "~");
 
-        if temp_pwd.to_string() != pwd
-        {
+        if temp_pwd.to_string() != pwd {
             rl.helper_mut().unwrap().colored_prompt =
-                format_prompt(&pwd, 0, &mut environment,ps1_prompt);
+                format_prompt(&pwd, CommandStatus::NORMAL, &mut environment, ps1_prompt);
         }
-        if &temp_ps1.to_string() != environment.get("PS1").unwrap_or(&default_ps1_prompt.to_string().to_string()){
-            ps1env = environment.get("PS1").cloned().unwrap_or(default_ps1_prompt.to_string());
+        if &temp_ps1.to_string()
+            != environment
+                .get("PS1")
+                .unwrap_or(&default_ps1_prompt.to_string().to_string())
+        {
+            ps1env = environment
+                .get("PS1")
+                .cloned()
+                .unwrap_or(default_ps1_prompt.to_string());
             // println!("{}",ps1env);
             ps1_prompt = ps1env.as_str();
             rl.helper_mut().unwrap().colored_prompt =
-                format_prompt(&pwd, 0, &mut environment,ps1_prompt);
-            
+                format_prompt(&pwd, CommandStatus::NORMAL, &mut environment, ps1_prompt);
         }
-        temp_ps1 =  environment.get("PS1").unwrap_or(&default_ps1_prompt.to_string()).to_string();
+        temp_ps1 = environment
+            .get("PS1")
+            .unwrap_or(&default_ps1_prompt.to_string())
+            .to_string();
         temp_pwd = pwd.clone();
         // let a = &remove_colors(rl.helper_mut().unwrap().colored_prompt.as_mut().to_string());
         // let uncolord = &remove_colors(rl.helper_mut().unwrap().colored_prompt.as_mut().to_string());
         // let exit_status:i32 = environment.get("exit_status").unwrap_or(&"".to_string()).parse::<i32>().unwrap_or(0);
-        let uncolord = &remove_colors(format_prompt(&pwd,ret,&mut environment,ps1_prompt));
+        let uncolord = &remove_colors(format_prompt(&pwd, ret, &mut environment, ps1_prompt));
 
         let input = rl.readline(&uncolord.trim());
         // let input = rl.readline(format_prompt(&pwd, "", &mut environment,ps1_prompt).as_str()); // TODO: use the shellexpand
@@ -364,29 +393,32 @@ fn main() {
                 rl.add_history_entry(command);
                 ret = handle_command(command.to_string(), &mut aliases, &mut environment);
                 // io::stdout().flush().unwrap(); // try to flush the stdout for print without new line // TODO add flush to allow print without new line
-                if ret==-1{
+
+                if let CommandStatus::EXIT(n) = ret {
                     println!("exit");
-                    break;
-                }
-                else{
+                    break n;
+                } else {
                     rl.helper_mut().unwrap().colored_prompt =
-                            format_prompt(&pwd, ret, &mut environment,ps1_prompt);
+                        format_prompt(&pwd, ret.clone(), &mut environment, ps1_prompt);
                 }
             }
             Err(ReadlineError::Interrupted) => {
                 println!("CTRL-C");
-                break;
+                break 1;
             }
             Err(ReadlineError::Eof) => {
                 println!("CTRL-D");
-                break;
+                break 1;
             }
             Err(err) => {
                 println!("Error: {:?}", err);
-                break;
+                break 1;
             }
         }
-    }
+    };
     rl.save_history("history.txt")
         .expect("error saving to a file");
+    if exit_code != 0 {
+        exit(exit_code);
+    }
 }

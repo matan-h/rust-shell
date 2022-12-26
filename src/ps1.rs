@@ -3,10 +3,9 @@ use std::env;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::process::Command;
-fn is_debug() -> bool {
-    let arg1 = env::args().nth(1).unwrap_or_default();
-    arg1 == "debug"
-}
+
+use crate::is_debug;
+
 
 // PS1 parser. most of it written by chatgpt. (took me more then 3h to debug it and took me 10m to ask the chatgpt and encourage it to complete the program , so now most of it written by me :| )
 pub fn run_command(full_command: String) -> String {
