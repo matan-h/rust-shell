@@ -24,7 +24,7 @@ fn is_debug() -> bool {
     arg1 == "--debug"
 }
 
-#[derive(Clone)]
+#[derive(Clone,Debug)]
 pub enum CommandStatus {
     EXIT(i32),
     NORMAL,
@@ -158,7 +158,6 @@ fn handle_command(
                     // send output to shell stdout
                     Stdio::inherit()
                 };
-                // println!("running, {:#?} ({})", command, args.join(" ")); // just for debug
                 let output = Command::new(command)
                     .args(args)
                     .stdin(stdin)
@@ -431,15 +430,17 @@ fn main() {
                 rl.add_history_entry(command);
                 ret = handle_command(command.to_string(), &mut aliases, &mut environment);
                 // io::stdout().flush().unwrap(); // try to flush the stdout for print without new line // TODO add flush to allow print without new line
-
-                if let CommandStatus::EXIT(n) = ret {
-                    println!("exit");
-                    break n;
-                } else {
-                    rl.helper_mut().unwrap().colored_prompt =
-                        format_prompt(&pwd, ret.clone(), &mut environment, ps1_prompt);
-                }
+                let reformat =match ret.clone(){
+                    CommandStatus::EXIT(n)=>{println!("exit");break n},
+                    CommandStatus::Message(s,i)=>{if i==0{println!("{}",s)} else {eprintln!("{}",s)};1}
+                    CommandStatus::ERROR(_)=>{1}
+                    CommandStatus::NORMAL=>{1}
+                };
+                if reformat==1{
+                rl.helper_mut().unwrap().colored_prompt =
+                    format_prompt(&pwd, ret, &mut environment, ps1_prompt);
             }
+        }
             Err(ReadlineError::Interrupted) => {
                 println!("CTRL-C");
                 break 1;

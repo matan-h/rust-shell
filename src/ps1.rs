@@ -21,7 +21,6 @@ pub fn run_command(full_command: String) -> String {
     };
 }
 pub fn parse(ps1: String, pwd: String, hostname: String) -> String {
-    // FIXME: why
     let cwd = PathBuf::from(pwd);
     let mut new_ps1 = ps1.clone();
     let now: DateTime<Local> = Local::now();
@@ -176,6 +175,9 @@ pub fn parse(ps1: String, pwd: String, hostname: String) -> String {
                 ascii_undelay += 2;
             }
         }
+    }
+    if new_ps1.contains("%{\x1B") && new_ps1.contains("%}"){
+        new_ps1 = new_ps1.replace("%{", "").replace("%}", ""); // use %{color%} in the ps1
     }
 
     return new_ps1;
