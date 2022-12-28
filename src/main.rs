@@ -135,10 +135,12 @@ fn handle_command(
                     CommandStatus::NORMAL => {}
                     CommandStatus::Message(s, code) => {
                         if code == 0 {
+                            previous_code = CommandStatus::NORMAL; // don't print twice the messages
                             println!("{}", s);
                             // previous_builtin = Some(s); // TODO : pipe from builtins
                             // previous_command = Some(s);
                         } else {
+                            previous_code = CommandStatus::ERROR(code); // don't print twice the messages
                             eprintln!("{}", s)
                         }
                     }
@@ -317,7 +319,7 @@ fn main() {
     }
 
     if !no_rc {
-        let rcfile = Path::new(&homedir).join(".rustshellrc");
+        let rcfile = Path::new(&homedir).join(".rstshrc");
         if rcfile.exists() {
             if is_debug() {
                 println!("source rcfile: {:?}", rcfile);

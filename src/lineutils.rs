@@ -64,6 +64,7 @@ pub struct CommandHighlighter {
     invalid_color:String,
     exe_color:String,
     builtins_color:String,
+    comment_color:String,
 }
 
 impl CommandHighlighter {
@@ -74,7 +75,8 @@ impl CommandHighlighter {
             builtins_map : builtins::build_map(),
             invalid_color: "\x1b[1;31m".to_string(), // bold and red
             exe_color:"\x1b[0;35m".to_string(), // purple
-            builtins_color:"\x1b[38;2;255;215;0m".to_string() // RGB(255, 215, 0)
+            comment_color:"\x1b[90m".to_string() ,// medium grey
+            builtins_color:"\x1b[38;2;255;215;0m".to_string(), // RGB(255, 215, 0)
         }
     }
 }
@@ -82,6 +84,9 @@ impl Highlighter for CommandHighlighter {
     fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
         if line.len()<3{
             return  Borrowed(line);
+        }
+        if line.trim().starts_with("#"){// comment
+            return Owned(format!("{}{}\x1b[0m",self.comment_color,line))
         }
         let exe = line.trim().split_ascii_whitespace().next().unwrap_or_default();
         let executable_color;
@@ -92,6 +97,15 @@ impl Highlighter for CommandHighlighter {
             executable_color = if which::which(exe).is_ok(){self.exe_color.clone()} else {self.invalid_color.clone()};
         }
         let mut copy = line.to_owned();
+        let comment_location = line.rfind('#');
+        if comment_location.is_some(){
+            comment_location.unwrap();
+            let comment_range = comment_location.unwrap()..copy.len();
+            let comment = copy.get(comment_range.clone()).unwrap_or_default();
+            copy.replace_range(comment_range,&format!("{}{}\x1b[0m",self.comment_color,comment))
+
+        }
+
         let index = line.find(" ").unwrap_or_default();
         copy.replace_range(0..index,&format!("{}{}\x1b[0m", executable_color,exe));
         return Owned(copy);
